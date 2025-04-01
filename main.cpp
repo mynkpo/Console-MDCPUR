@@ -9,7 +9,6 @@
 #include <algorithm>
 
 std::string getKeyPressed() {
-
     const std::map<int, std::string> keiMap = {
         { 'W', "W" }, { 'A', "A" }, { 'S', "S" }, { 'D', "D" },
         { 'U', "U" }, { 'H', "H" }, { 'J', "J" }, { 'K', "K" },
@@ -17,18 +16,9 @@ std::string getKeyPressed() {
         { VK_UP, "UP" }, { VK_DOWN, "DOWN" }, { VK_LEFT, "LEFT" }, { VK_RIGHT, "RIGHT" }
     };
 
-    static std::map<int, bool> wasKeyPressed;
-
     for (const auto& [keyCode, keyName] : keiMap) {
-        bool isPressed = (GetAsyncKeyState(keyCode) & 0x8000) != 0;
-
-        if (isPressed && !wasKeyPressed[keyCode]) {
-
-            wasKeyPressed[keyCode] = true;
+        if ((GetAsyncKeyState(keyCode) & 0x8000) != 0) {
             return keyName;
-        } else if (!isPressed) {
-
-            wasKeyPressed[keyCode] = false;
         }
     }
     return "";
