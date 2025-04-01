@@ -9,12 +9,26 @@
 #include <algorithm>
 
 std::string getKeyPressed() {
-    for (int key = 8; key <= 255; key++) {
-        if (GetAsyncKeyState(key) & 0x8000) {
-            char name[128];
-            if (GetKeyNameTextA(MapVirtualKeyA(key, MAPVK_VK_TO_VSC) << 16, name, sizeof(name))) {
-                return std::string(name);
-            }
+
+    const std::map<int, std::string> keiMap = {
+        { 'W', "W" }, { 'A', "A" }, { 'S', "S" }, { 'D', "D" },
+        { 'U', "U" }, { 'H', "H" }, { 'J', "J" }, { 'K', "K" },
+        { 'Z', "Z" }, { 'X', "X" }, { 'C', "C" },
+        { VK_UP, "UP" }, { VK_DOWN, "DOWN" }, { VK_LEFT, "LEFT" }, { VK_RIGHT, "RIGHT" }
+    };
+
+    static std::map<int, bool> wasKeyPressed;
+
+    for (const auto& [keyCode, keyName] : keiMap) {
+        bool isPressed = (GetAsyncKeyState(keyCode) & 0x8000) != 0;
+
+        if (isPressed && !wasKeyPressed[keyCode]) {
+
+            wasKeyPressed[keyCode] = true;
+            return keyName;
+        } else if (!isPressed) {
+
+            wasKeyPressed[keyCode] = false;
         }
     }
     return "";
@@ -92,8 +106,11 @@ struct renderItem {
 std::vector<vec2> retrieveProjectedPoints(std::vector<vec3> list, int distance) {
     std::vector<vec2> final;
     for (vec3 vec : list) {
-        final.push_back(vec2((vec.x * distance)/std::clamp(vec.z, 1, 1000),
-                            (vec.y * distance)/std::clamp(vec.z, 1, 1000)));
+        double z = std::max(1, vec.z);
+        final.push_back(vec2(
+            static_cast<int>((vec.x * distance) / z),
+            static_cast<int>((vec.y * distance) / z)
+        ));
     }
     return final;
 }
@@ -120,18 +137,31 @@ std::vector<vec3> rotate3DPoints(std::vector<vec3> points2, vec3 rotation) {
 }
 
 std::vector<vec3> applyCameraTransform(std::vector<vec3> points, vec3 cameraPos, vec3d cameraAngles) {
+
     std::vector<vec3> final;
-    vec3d caN = vec3d(cameraAngles.x * M_PI / 180.0,
-                      cameraAngles.y * M_PI / 180.0,
-                      cameraAngles.z * M_PI / 180.0);
+
+    double radX = cameraAngles.x * M_PI / 180.0;
+    double radY = cameraAngles.y * M_PI / 180.0;
+    double radZ = cameraAngles.z * M_PI / 180.0;
 
     for (vec3 vec : points) {
-        final.push_back(vec3(
-            (vec.x - cameraPos.x)*(cos(caN.y) * cos(caN.z)) + (vec.y-cameraPos.y)*(cos(caN.y)*sin(caN.z)) + (vec.z - cameraPos.z)*(-sin(caN.y)),
-            (vec.x - cameraPos.x)*(sin(caN.x)*sin(caN.y)*cos(caN.z) - cos(caN.x)*sin(caN.z)) + (vec.y-cameraPos.y)*(sin(caN.x)*sin(caN.y)*sin(caN.z) + cos(caN.x)*cos(caN.z)) + (vec.z - cameraPos.z)*(sin(caN.x)*cos(caN.y)),
-            (vec.x - cameraPos.x)*(cos(caN.x)*sin(caN.y)*cos(caN.z) + sin(caN.x)*sin(caN.z)) + (vec.y-cameraPos.y)*(cos(caN.x)*sin(caN.y)*sin(caN.z) - sin(caN.x)*cos(caN.z)) + (vec.z - cameraPos.z)*(cos(caN.x)*cos(caN.y))
-        ));
+        vec3 translated = {
+
+            vec.x - cameraPos.x,
+            vec.y - cameraPos.y,
+            vec.z - cameraPos.z
+        };
+
+        double x1 = translated.x * cos(radY) + translated.z * sin(radY);
+        double z1 = -translated.x * sin(radY) + translated.z * cos(radY);
+        double y1 = translated.y * cos(radX) - z1 * sin(radX);
+        double z2 = translated.y * sin(radX) + z1 * cos(radX);
+        double x2 = x1 * cos(radZ) - y1 * sin(radZ);
+        double y2 = x1 * sin(radZ) + y1 * cos(radZ);
+
+        final.push_back(vec3(x2, y2, z2));
     }
+
     return final;
 }
 
@@ -258,14 +288,17 @@ struct cubeItem3D {
     vec3 bclP, bcrP, bflP, bfrP, tclP, tcrP, tflP, tfrP;
 
     cubeItem3D(int length, vec3 rot, vec3 coords) {
-        bclP = {length + coords.x, length + coords.y, length + coords.z};
-        bcrP = {-length + coords.x, length + coords.y, length + coords.z};
-        bflP = {-length + coords.x, -length + coords.y, length + coords.z};
-        bfrP = {-length + coords.x, -length + coords.y, -length + coords.z};
-        tclP = {length + coords.x, -length + coords.y, -length + coords.z};
-        tcrP = {length + coords.x, length + coords.y, -length + coords.z};
-        tflP = {-length + coords.x, length + coords.y, -length + coords.z};
-        tfrP = {length + coords.x, -length + coords.y, length + coords.z};
+        int half = length / 2;
+        // bottom face
+        bclP = {-half + coords.x, -half + coords.y, -half + coords.z}; // Bottom Close Left
+        bcrP = {half + coords.x, -half + coords.y, -half + coords.z};  // Bottom Close Right
+        bflP = {-half + coords.x, half + coords.y, -half + coords.z};  // Bottom Far Left
+        bfrP = {half + coords.x, half + coords.y, -half + coords.z};   // Bottom Far Right
+        // top face
+        tclP = {-half + coords.x, -half + coords.y, half + coords.z};  // Top Close Left
+        tcrP = {half + coords.x, -half + coords.y, half + coords.z};   // Top Close Right
+        tflP = {-half + coords.x, half + coords.y, half + coords.z};   // Top Far Left
+        tfrP = {half + coords.x, half + coords.y, half + coords.z};    // Top Far Right
         this->coordinets = coords;
         this->rotation = rot;
     }
@@ -378,7 +411,7 @@ public:
                 bool dr = std::find(PointHandler::pointList.begin(),
                                   PointHandler::pointList.end(),
                                   vec2(w, h)) != PointHandler::pointList.end();
-                bufferS[w] = dr ? ' ' : '#';
+                bufferS[w] = dr ? '🟩' : ' ';
             }
             std::cout << bufferS << "\n";
         }
@@ -390,6 +423,7 @@ int main() {
     renderItem3D item_3d3 = renderItem3D(PointHandler::getCubePoints(vec3(5,4,0), 4),
                                          vec3(0,0,0),
                                          vec3(0, 0, 0));
+
     PointHandler::toRender3D.push_back(&item_3d3);
 
     double rotangle = 0;
